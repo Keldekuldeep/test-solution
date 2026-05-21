@@ -15,9 +15,8 @@ public class WebhookStartupRunner implements ApplicationRunner {
     private static final String GENERATE_WEBHOOK_URL =
             "https://bfhldevapigw.healthrx.co.in/hiring/generateWebhook/JAVA";
 
-    // SQL query for Question 1 (odd regNo last two digits = 47)
-    // For each employee, count how many employees in the same department are younger
-    // Younger = later DOB (higher date value)
+    // Question 1 (regNo REG12347 -> last two digits 47 -> odd)
+    // Count employees younger (DOB > current employee's DOB) in same department
     private static final String FINAL_SQL_QUERY =
             "SELECT e.EMP_ID, e.FIRST_NAME, e.LAST_NAME, d.DEPARTMENT_NAME, " +
             "COUNT(e2.EMP_ID) AS YOUNGER_EMPLOYEES_COUNT " +
@@ -34,82 +33,58 @@ public class WebhookStartupRunner implements ApplicationRunner {
     public void run(ApplicationArguments args) throws Exception {
         System.out.println("=== Starting Webhook Flow ===");
 
-        String webhookUrl = null;
-        String accessToken = null;
-
-        try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-
-            ObjectNode requestBody = objectMapper.createObjectNode();
-            requestBody.put("name", "John Doe");
-            requestBody.put("regNo", "REG12347");
-            requestBody.put("email", "john@example.com");
-
-            HttpEntity<String> entity = new HttpEntity<>(requestBody.toString(), headers);
-
-            ResponseEntity<String> response = restTemplate.postForEntity(
-                    GENERATE_WEBHOOK_URL, entity, String.class);
-
-            System.out.println("Generate Webhook Response Status: " + response.getStatusCode());
-            System.out.println("Generate Webhook Response Body: " + response.getBody());
-
-            JsonNode responseJson = objectMapper.readTree(response.getBody());
-            webhookUrl = responseJson.path("webhook").asText();
-            accessToken = responseJson.path("accessToken").asText();
-
-            System.out.println("Webhook URL: " + webhookUrl);
-            System.out.println("Access Token received: " + (accessToken != null && !accessToken.isEmpty()));
-
-        } catch (Exception e) {
-            System.err.println("Failed to generate webhook: " + e.getMessage());
-            throw e;
-        }
-
-        submitSolution(webhookUrl, accessToken);
-    }
-
-    private void submitSolution(String webhookUrl, String accessToken) {
         int maxRetries = 4;
-        int attempt = 0;
-
-        while (attempt < maxRetries) {
-            attempt++;
-            System.out.println("Submission attempt " + attempt + " of " + maxRetries);
-
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            System.out.println("Attempt " + attempt + " of " + maxRetries);
             try {
+                // Step 1: Get fresh webhook URL and token on every attempt
+                JsonNode webhookResponse = generateWebhook();
+                String webhookUrl = webhookResponse.path("webhook").asText();
+                String accessToken = webhookResponse.path("accessToken").asText();
+
+                System.out.println("Webhook URL: " + webhookUrl);
+                System.out.println("Access Token received: " + !accessToken.isEmpty());
+
+                // Step 2: Submit SQL solution
                 HttpHeaders headers = new HttpHeaders();
                 headers.setContentType(MediaType.APPLICATION_JSON);
-                headers.set("Authorization", "Bearer " + accessToken);
+                headers.set("Authorization", accessToken);
 
-                ObjectNode requestBody = objectMapper.createObjectNode();
-                requestBody.put("finalQuery", FINAL_SQL_QUERY);
+                ObjectNode body = objectMapper.createObjectNode();
+                body.put("finalQuery", FINAL_SQL_QUERY);
 
-                HttpEntity<String> entity = new HttpEntity<>(requestBody.toString(), headers);
+                HttpEntity<String> entity = new HttpEntity<>(body.toString(), headers);
+                ResponseEntity<String> response = restTemplate.postForEntity(webhookUrl, entity, String.class);
 
-                ResponseEntity<String> response = restTemplate.postForEntity(
-                        webhookUrl, entity, String.class);
-
-                System.out.println("Submission Response Status: " + response.getStatusCode());
-                System.out.println("Submission Response Body: " + response.getBody());
-
-                if (response.getStatusCode().is2xxSuccessful()) {
-                    System.out.println("=== Solution submitted successfully! ===");
-                    return;
-                }
+                System.out.println("Submission Status: " + response.getStatusCode());
+                System.out.println("Submission Body: " + response.getBody());
+                System.out.println("=== Solution submitted successfully! ===");
+                return;
 
             } catch (Exception e) {
                 System.err.println("Attempt " + attempt + " failed: " + e.getMessage());
                 if (attempt < maxRetries) {
-                    try {
-                        Thread.sleep(2000L * attempt);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                    }
+                    Thread.sleep(2000L);
                 }
             }
         }
 
-        System.err.println("=== All " + maxRetries + " submission attempts failed ===");
+        System.err.println("=== All " + maxRetries + " attempts failed ===");
+    }
+
+    private JsonNode generateWebhook() throws Exception {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        ObjectNode body = objectMapper.createObjectNode();
+        body.put("name", "John Doe");
+        body.put("regNo", "REG12347");
+        body.put("email", "john@example.com");
+
+        HttpEntity<String> entity = new HttpEntity<>(body.toString(), headers);
+        ResponseEntity<String> response = restTemplate.postForEntity(GENERATE_WEBHOOK_URL, entity, String.class);
+
+        System.out.println("Generate Webhook Status: " + response.getStatusCode());
+        return objectMapper.readTree(response.getBody());
     }
 }
