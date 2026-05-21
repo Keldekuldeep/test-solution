@@ -80,7 +80,7 @@ public class WebhookStartupRunner implements ApplicationRunner {
             try {
                 HttpHeaders headers = new HttpHeaders();
                 headers.setContentType(MediaType.APPLICATION_JSON);
-                headers.set("Authorization", accessToken);
+                headers.set("Authorization", "Bearer " + accessToken);
 
                 ObjectNode requestBody = objectMapper.createObjectNode();
                 requestBody.put("finalQuery", FINAL_SQL_QUERY);
